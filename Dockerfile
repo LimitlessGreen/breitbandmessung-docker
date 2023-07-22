@@ -1,5 +1,5 @@
 # Pull base image.
-FROM jlesage/baseimage-gui:ubuntu-18.04
+FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:ubuntu-18.04
 
 ARG VERSION
 
