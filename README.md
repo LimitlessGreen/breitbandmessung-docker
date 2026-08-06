@@ -153,7 +153,7 @@ docker build -t breitband:latest .
 
 ## Additional Notes
 
-- **Auto-Updates:** By default, the container checks for the latest version of the Breitbandmessung app on every start using the official `latest-linux.yml`. It only downloads and installs updates if the online version differs from the installed one. To disable this, set `CHECK_FOR_UPDATES` to `"false"`.
+- **Auto-Updates:** By default, the container checks for the latest version of the Breitbandmessung app on every start using the official [latest-linux.yml](https://download.breitbandmessung.de/bbm/latest-linux.yml). It only downloads and installs updates if the online version differs from the installed one. To disable this, set `CHECK_FOR_UPDATES` to `"false"`.
 
 - By default, the automation-script is configured to run speedtests only between 13:00 and 22:30 o'clock, because it is assumed, that the network load between 0 o'clock and 13:00 AM is lower than it is under normal use during the day.
   To customise the time window, change the environment variables `TIME_START` and `TIME_END`.
