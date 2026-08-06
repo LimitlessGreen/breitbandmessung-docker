@@ -1,0 +1,65 @@
+# Analyse Image basierend auf dem Breitbandmessung Produktions-Image
+FROM jlesage/baseimage-gui:ubuntu-26.04-v4
+
+# Install base dependencies (copy from original Dockerfile to ensure consistency if built standalone)
+RUN upg-pkg && \
+    add-pkg apt-utils nano libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libxss1 libasound2t64 wget xterm libnss3 locales xdotool xclip ca-certificates libgl1 lsb-release && \
+    locale-gen de_DE.UTF-8
+
+# Install Analysis & Reverse Engineering Tools
+RUN add-pkg \
+    # System Analysis
+    strace lsof net-tools procps binutils jq curl vim \
+    # Reverse Engineering & Java for Ghidra
+    radare2 openjdk-17-jdk \
+    # Node.js for Electron analysis (asar)
+    nodejs npm \
+    # X11 & UI Analysis
+    x11-utils xdotool \
+    # Accessibility Testing
+    accerciser at-spi2-core python3-pyatspi
+
+# Install asar tool for Electron extraction
+RUN npm install -g asar
+
+# Generate and install favicons (same as production)
+RUN APP_ICON_URL=https://www.breitbandmessung.de/public/images/appicon-512.png && \
+    install_app_icon.sh "$APP_ICON_URL"
+
+# Add files from current project
+COPY rootfs/ /
+# Fix permissions for our scripts
+RUN chmod +x /usr/local/bin/analyze-app.sh /usr/local/bin/ui-explorer.py /usr/local/bin/master-automation.py /startapp.sh
+
+# Pre-install Breitbandmessung to avoid runtime issues
+RUN YAML_URL="https://download.breitbandmessung.de/bbm/latest-linux.yml" && \
+    BASE_URL="https://download.breitbandmessung.de/bbm" && \
+    DEB_TEMP="/tmp/breitbandmessung.deb" && \
+    YAML=$(wget -qO- "$YAML_URL") && \
+    ONLINE_VERSION=$(echo "$YAML" | sed -n 's/^version: //p' | tr -d '\r' | head -n1) && \
+    ONLINE_PATH=$(echo "$YAML" | sed -n 's/^path: //p' | tr -d '\r' | head -n1) && \
+    wget -q "$BASE_URL/$ONLINE_PATH" -O "$DEB_TEMP" && \
+    sed -i '/messagebus/d' /var/lib/dpkg/statoverride || true && \
+    dpkg -i "$DEB_TEMP" && \
+    rm "$DEB_TEMP"
+
+# Set internal environment variables (same as production)
+RUN \
+    set-cont-env APP_NAME "Breitbandmessung-Dev" && \
+    set-cont-env APP_VERSION "3.12.1" && \
+    set-cont-env APP_SHA256SUM "b948331a4e8df0fcbdd6fbace588770e62b4c61e7e279c6a0f79ef581de080f1" && \
+    set-cont-env CHECK_FOR_UPDATES "true" && \
+    set-cont-env DEBIAN_FRONTEND "noninteractive" && \
+    set-cont-env LANG "de_DE.UTF-8" && \
+    # Enable Accessibility Bus
+    set-cont-env GTK_MODULES "gail:atk-bridge" && \
+    set-cont-env QT_ACCESSIBILITY "1" && \
+    true
+
+# Set public environment variables
+ENV TZ=Europe/Berlin
+ENV DISPLAY_WIDTH="1280"
+ENV DISPLAY_HEIGHT="800"
+
+# Note: SYS_PTRACE capability is needed at runtime for strace
+VOLUME /config/xdg/config/Breitbandmessung

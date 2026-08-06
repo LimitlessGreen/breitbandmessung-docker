@@ -1,0 +1,22 @@
+services:
+  breitband-dev:
+    image: breitbandmessung:dev
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: breitband-dev
+    cap_add:
+      - SYS_PTRACE
+    environment:
+      TZ: Europe/Berlin
+      TIME_START: "00:00"
+      TIME_END: "23:59"
+      CHECK_FOR_UPDATES: "true"
+      # Enable debugging/accessibility
+      NO_AT_BRIDGE: 0
+    volumes:
+      - $PWD/breitbandmessung/dev-data:/config/xdg/config/Breitbandmessung
+      - $PWD/rootfs/usr/local/bin/analyze-app.sh:/usr/local/bin/analyze-app.sh:ro
+    ports:
+      - 5801:5800
+    restart: unless-stopped
