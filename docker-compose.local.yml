@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     image: breitbandmessung:local
     container_name: breitband-desktop-local
+    privileged: true
     environment:
       TZ: Europe/Berlin
       TIME_START: "08:00"

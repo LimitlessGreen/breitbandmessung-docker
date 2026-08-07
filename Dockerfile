@@ -5,7 +5,7 @@ FROM jlesage/baseimage-gui:ubuntu-26.04-v4
 # Install packages
 RUN upg-pkg && \
     add-pkg apt-utils nano libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libxss1 libasound2t64 wget xterm libnss3 locales xdotool xclip ca-certificates libgl1 lsb-release \
-    at-spi2-core python3-pyatspi && \
+    at-spi2-core python3-pyatspi xkb-data && \
     locale-gen de_DE.UTF-8
 
 # Generate and install favicons.
