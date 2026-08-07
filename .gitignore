@@ -12,6 +12,27 @@ breitbandmessung/
 data/
 campaign_state.json
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+env/
+venv/
+bin/
+lib/
+develop-eggs/
+dist/
+eggs/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
 # Tooling / Artifacts
 .artifacts/
 screenshots/
