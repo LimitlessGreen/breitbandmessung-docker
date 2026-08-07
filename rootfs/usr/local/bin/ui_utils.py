@@ -43,35 +43,65 @@ class UI:
                 if c and "breitbandmessung" in c.name.lower(): return c
         return None
 
+    def find_all(self, obj, role, results):
+        try:
+            if obj.get_role_name() == role: results.append(obj)
+            for i in range(obj.get_child_count()): self.find_all(obj.get_child_at_index(i), role, results)
+        except: pass
+
     def automate(self, app):
-        # Navigation
-        btn = self.find(app, "Akzeptieren", "button")
-        if btn: btn.queryAction().doAction(0); time.sleep(2)
+        # 0. Check if already running (Fast path)
+        status_msg = "Die Downloadmessung wird durchgeführt."
+        if self.find(app, status_msg, "static"):
+            return True, "Already Running"
+
+        # 1. Basic TOS
+        tos = self.find(app, "Akzeptieren", "button")
+        if tos: tos.queryAction().doAction(0); time.sleep(2)
         
         if self.find(app, "Nutzerangaben vervollständigen", "button"):
             return False, "Setup missing"
 
-        menu = self.wait(app, "Messkampagne", "menu item")
-        if menu: menu.queryAction().doAction(0); time.sleep(2)
+        # 2. Requirements Screen check (maybe we are already there?)
+        go = self.find(app, "Messung starten", "button")
+        if not go:
+            # 3. Campaign Screen check
+            start = self.find(app, "Messung durchführen", "button")
+            if not start:
+                # 4. We are likely on the wrong tab. Navigate back.
+                logging.info("Main button missing. Navigating to 'Messkampagne' tab...")
+                menu = self.find(app, "Messkampagne", "menu item")
+                if menu:
+                    menu.queryAction().doAction(0)
+                    time.sleep(2)
+                    start = self.wait(app, "Messung durchführen", "button")
 
-        start = self.wait(app, "Messung durchführen", "button")
-        if not start: return (True, "Running") if self.find(app, "Die Downloadmessung wird durchgeführt.", "static") else (False, "No Start Button")
-        start.queryAction().doAction(0); time.sleep(3)
+            if start:
+                start.queryAction().doAction(0)
+                time.sleep(2)
+                go = self.wait(app, "Messung starten", "button")
 
-        # Checkboxes
-        cbs = []
-        def find_cbs(o):
-            if o.get_role_name() == "check box": cbs.append(o)
-            for i in range(o.get_child_count()): find_cbs(o.get_child_at_index(i))
-        find_cbs(app)
-        for cb in cbs: cb.queryAction().doAction(0)
+        # 5. Requirements Checkboxes (only if 'Messung starten' is visible)
+        if go:
+            cbs = []
+            self.find_all(app, "check box", cbs)
+            for cb in cbs:
+                try:
+                    # Check if already checked if possible, otherwise just click
+                    cb.queryAction().doAction(0)
+                except: pass
+            
+            go.queryAction().doAction(0)
+            time.sleep(2)
 
-        go = self.wait(app, "Messung starten", "button")
-        if go: go.queryAction().doAction(0); time.sleep(3)
-
+        # 6. Location Dialog
         dlg = self.find(app, "Standortfreigabe", "dialog")
         if dlg:
             no = self.find(dlg, "Nein", "button")
             if no: no.queryAction().doAction(0); time.sleep(2)
 
-        return (True, "Started") if self.wait(app, "Die Downloadmessung wird durchgeführt.", "static") else (False, "Confirm failed")
+        # 7. Final Verification
+        if self.wait(app, status_msg, "static", timeout=5):
+            return True, "Started"
+        
+        return False, "Failed to confirm start"
