@@ -16,9 +16,11 @@ RUN APP_ICON_URL=https://www.breitbandmessung.de/public/images/appicon-512.png &
 # Add files.
 COPY rootfs/ /
 
-# Fix permissions: .dep files should NOT be executable, run scripts MUST be executable.
+# Fix permissions and line endings.
 RUN find /etc/services.d -type f -name "*.dep" -exec chmod 644 {} + && \
     find /etc/services.d -type f -name "run" -exec chmod 755 {} + && \
+    find /etc/services.d -type f -exec sed -i 's/\r$//' {} + && \
+    sed -i 's/\r$//' /startapp.sh && \
     chmod +x /usr/local/bin/*.py /startapp.sh
 
 # Set internal environment variables.
