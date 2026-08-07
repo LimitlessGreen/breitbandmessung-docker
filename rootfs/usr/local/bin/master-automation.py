@@ -1,47 +1,84 @@
 #!/usr/bin/env python3
-import sys, time, os, logging, random
+import sys, time, os, logging, random, copy
 from datetime import datetime, timedelta
 from campaign import Campaign
 from ui_utils import UI, set_clip, get_clip
 
+# Try to load Rich for pretty tables
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich import box
+    HAS_RICH = True
+except Exception:
+    HAS_RICH = False
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def print_schedule_table(cp, title="Predicted Schedule"):
+    if not HAS_RICH:
+        logging.info("Rich not installed, skipping table.")
+        return
+
+    # Work on a deep copy of the campaign to not mess up the real state
+    sim_cp = copy.deepcopy(cp)
+    sim_cp.state["active"] = True
+    
+    # Simulation logic should start from 'now' or 'last test + gap'
+    now = datetime.now().replace(second=0, microsecond=0)
+    if sim_cp.state["last_ts"] > 0:
+        last_dt = datetime.fromtimestamp(sim_cp.state["last_ts"])
+        if now < last_dt + timedelta(minutes=5):
+            now = last_dt + timedelta(minutes=5)
+
+    console = Console()
+    table = Table(title=title, box=box.ROUNDED, show_header=True, header_style="bold cyan")
+    table.add_column("Test #", justify="right", style="dim")
+    table.add_column("Day", justify="left")
+    table.add_column("Predicted Time", justify="center", style="green")
+    table.add_column("Status", justify="left")
+
+    limit = 50
+    while sim_cp.state["total"] < sim_cp.RULES["TOTAL"] and limit > 0:
+        limit -= 1
+        ok, msg = sim_cp.can_run(now)
+        if ok:
+            ts = now.timestamp() + 22 # Predict with average jitter
+            sim_cp.record(ts)
+            table.add_row(
+                f"{sim_cp.state['total']:02d}/{sim_cp.RULES['TOTAL']}",
+                now.strftime("%a, %Y-%m-%d"),
+                now.strftime("%H:%M"),
+                "[bold blue]Planned[/bold blue]"
+            )
+            now = datetime.fromtimestamp(ts) + timedelta(minutes=6) # 1min test + 5min gap
+        else:
+            if "Window" in msg or "Goal" in msg:
+                s_h, s_m = map(int, sim_cp.prefs["START"].split(':'))
+                next_day = (now + timedelta(days=1)).replace(hour=s_h, minute=s_m, second=0)
+                now = next_day
+            elif "Day" in msg or "Gap Day" in msg:
+                now = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0)
+            elif "Wait" in msg:
+                now += timedelta(minutes=5)
+            elif "Expired" in msg: break
+            else: now += timedelta(minutes=15)
+
+    console.print(table)
+    if sim_cp.state["total"] < sim_cp.RULES["TOTAL"]:
+        console.print(f"[bold red]Warning:[/bold red] Only {sim_cp.state['total']}/{sim_cp.RULES['TOTAL']} tests possible in simulation!")
 
 def run_simulation(cp):
     logging.info("--- Solver Test Mode ---")
-    cp.state["active"] = True
-    now = datetime.now().replace(second=0, microsecond=0)
-    limit = 100000
-    while cp.state["total"] < cp.RULES["TOTAL"] and limit > 0:
-        limit -= 1
-        ok, msg = cp.can_run(now)
-        if ok:
-            ts = now.timestamp() + random.randint(0, 45)
-            cp.record(ts)
-            logging.info(f"Test {cp.state['total']:02d} @ {datetime.fromtimestamp(ts)}")
-            now = datetime.fromtimestamp(ts) + timedelta(minutes=1)
-        else:
-            if "Window" in msg:
-                s_h, s_m = map(int, cp.prefs["START"].split(':'))
-                if now.hour >= s_h:
-                    now = now.replace(hour=s_h, minute=s_m) + timedelta(days=1)
-                else:
-                    now = now.replace(hour=s_h, minute=s_m)
-            elif "Day" in msg:
-                now = now.replace(hour=0, minute=0) + timedelta(days=1)
-            elif "Wait" in msg:
-                now += timedelta(minutes=5)
-            elif "Expired" in msg:
-                logging.error("Campaign expired during simulation!")
-                break
-            else:
-                now += timedelta(minutes=10)
-    logging.info(f"--- End Simulation ({cp.state['total']}/{cp.RULES['TOTAL']}) ---")
+    print_schedule_table(cp, title="Full Campaign Simulation")
+    logging.info("--- End Simulation ---")
 
 def main():
     cp = Campaign()
     if "--test-solver" in sys.argv: return run_simulation(cp)
 
     logging.info("Automation Service Active.")
+    print_schedule_table(cp, title="Current Campaign Prediction")
     ui = UI()
     
     while True:
