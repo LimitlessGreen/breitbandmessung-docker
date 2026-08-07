@@ -58,11 +58,22 @@ class Campaign:
 
         # Day/Time Checks
         curr_min = now.hour * 60 + now.minute
-        if not (self._to_min(self.prefs["START"]) <= curr_min <= self._to_min(self.prefs["END"])):
+        start_min = self._to_min(self.prefs["START"])
+        end_min = self._to_min(self.prefs["END"])
+        if not (start_min <= curr_min <= end_min):
             return False, f"Outside Window ({self.prefs['START']}-{self.prefs['END']})"
         
         if self.prefs["DAYS"] and now.strftime("%a").lower() not in self.prefs["DAYS"]:
             return False, "Wrong Day"
+
+        # Efficiency Check: Is it even possible to reach the daily goal (10) today?
+        # A test takes ~1min + MIN 5min gap = 6min per test cycle.
+        remaining_tests = self.RULES["PER_DAY"] - self.state["daily"]
+        if remaining_tests > 0:
+            # We need (remaining-1) gaps of at least 5 mins
+            min_time_needed = remaining_tests + (remaining_tests - 1) * self.RULES["GAP_MINS"]
+            if curr_min + min_time_needed > end_min:
+                return False, "Insufficient time for daily goal"
 
         # Interval Checks
         elapsed = (now.timestamp() - self.state["last_ts"]) / 60
