@@ -1,2 +1,2 @@
 #!/bin/bash
-exec breitbandmessung --no-sandbox --force-renderer-accessibility
+exec breitbandmessung --no-sandbox --disable-gpu --force-renderer-accessibility
