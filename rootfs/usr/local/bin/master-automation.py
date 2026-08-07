@@ -1,341 +1,76 @@
 #!/usr/bin/env python3
-import sys
-import time
-import json
-import os
-import subprocess
-import random
+import sys, time, os, logging, random
 from datetime import datetime, timedelta
+from campaign import Campaign
+from ui_utils import UI, set_clip, get_clip
 
-# Configuration Constants (BNetzA Rules)
-TOTAL_TESTS_REQUIRED = 30
-TESTS_PER_DAY = 10
-MIN_DAYS = 3
-MAX_CAMPAIGN_DAYS = 14
-MIN_GAP_BETWEEN_TESTS_MINS = 5
-LONG_GAP_AFTER_TEST = 5  # After 5th test
-LONG_GAP_DURATION_HOURS = 3
-MIN_GAP_BETWEEN_DAYS = 1 # Full calendar day gap (e.g. Mon -> Wed)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-STATE_FILE = "/config/campaign_state.json"
-
-# Environment Variables for Preferences
-TIME_START = os.environ.get("TIME_START", "08:00")
-TIME_END = os.environ.get("TIME_END", "22:00")
-PREFERRED_DAYS = os.environ.get("PREFERRED_DAYS", "") # e.g. "Mon,Wed,Fri"
-PREFERRED_TIMES = os.environ.get("PREFERRED_TIMES", "") # e.g. "08:00-10:00,19:00-21:00"
-JITTER_MAX_MINS = int(os.environ.get("JITTER_MAX_MINS", "7"))
-
-def run_cmd(cmd):
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True).stdout.strip()
-
-def set_clipboard(text):
-    print(f"Clipboard Update: {text}")
-    subprocess.run(f"echo '{text}' | xclip -selection clipboard", shell=True)
-
-def get_clipboard():
-    return run_cmd("xclip -o -selection clipboard 2>/dev/null")
-
-def time_to_minutes(t_str):
-    try:
-        h, m = map(int, t_str.split(':'))
-        return h * 60 + m
-    except: return 0
-
-class CampaignManager:
-    def __init__(self):
-        self.load_state()
-
-    def load_state(self):
-        if os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, 'r') as f:
-                    self.state = json.load(f)
-            except:
-                self.reset_state()
+def run_simulation(cp):
+    logging.info("--- Solver Test Mode ---")
+    cp.state["active"] = True
+    now = datetime.now().replace(second=0, microsecond=0)
+    limit = 100000
+    while cp.state["total"] < cp.RULES["TOTAL"] and limit > 0:
+        limit -= 1
+        ok, msg = cp.can_run(now)
+        if ok:
+            ts = now.timestamp() + random.randint(0, 45)
+            cp.record(ts)
+            logging.info(f"Test {cp.state['total']:02d} @ {datetime.fromtimestamp(ts)}")
+            now = datetime.fromtimestamp(ts) + timedelta(minutes=1)
         else:
-            self.reset_state()
-
-    def reset_state(self):
-        self.state = {
-            "start_date": None,
-            "total_count": 0,
-            "daily_count": 0,
-            "last_test_ts": 0,
-            "last_test_day": None, # "YYYY-MM-DD"
-            "active": False
-        }
-        self.save_state()
-
-    def save_state(self):
-        # Don't save during simulation test
-        if "--test-solver" in sys.argv: return
-        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-        with open(STATE_FILE, 'w') as f:
-            json.dump(self.state, f)
-
-    def is_in_preferred_day(self, dt):
-        if not PREFERRED_DAYS: return True
-        days = [d.strip().lower()[:3] for d in PREFERRED_DAYS.split(',')]
-        current_day = dt.strftime("%a").lower()
-        return current_day in days
-
-    def is_in_preferred_time(self, dt):
-        current_min = dt.hour * 60 + dt.minute
-        
-        # General Window
-        start_min = time_to_minutes(TIME_START)
-        end_min = time_to_minutes(TIME_END)
-        if not (start_min <= current_min <= end_min):
-            return False, f"Outside general window ({TIME_START}-{TIME_END})"
-
-        # Specific Preferred Windows
-        if PREFERRED_TIMES:
-            windows = PREFERRED_TIMES.split(',')
-            in_any = False
-            for w in windows:
-                try:
-                    s, e = w.split('-')
-                    if time_to_minutes(s) <= current_min <= time_to_minutes(e):
-                        in_any = True
-                        break
-                except: continue
-            if not in_any:
-                return False, f"Outside preferred windows ({PREFERRED_TIMES})"
-
-        return True, "Ready"
-
-    def can_measure_at(self, now):
-        if not self.state["active"]:
-            return False, "Campaign not active. Put 'START' in clipboard to begin."
-
-        now_ts = now.timestamp()
-        today_str = now.strftime("%Y-%m-%d")
-
-        if self.state["total_count"] >= TOTAL_TESTS_REQUIRED:
-            return False, "Campaign finished (30/30)."
-
-        if self.state["start_date"]:
-            start_dt = datetime.strptime(self.state["start_date"], "%Y-%m-%d")
-            if (now - start_dt).days > MAX_CAMPAIGN_DAYS:
-                return False, "Campaign expired (>14 days)."
-
-        # Day Transition Logic
-        if self.state["last_test_day"] != today_str:
-            if self.state["last_test_day"]:
-                last_dt = datetime.strptime(self.state["last_test_day"], "%Y-%m-%d")
-                # BNetzA: Mon -> Wed is allowed (gap of 1 day)
-                if (now - last_dt).days < (MIN_GAP_BETWEEN_DAYS + 1):
-                    return False, f"Waiting for gap day (Last test: {self.state['last_test_day']})"
-            
-            if not self.is_in_preferred_day(now):
-                return False, "Not a preferred weekday."
-            
-            # Note: daily_count is reset in record_success_at if a new day is detected
-
-        if self.state["daily_count"] >= TESTS_PER_DAY:
-            return False, "Daily limit reached (10/10)."
-
-        # Time Window & Preferred Time Check
-        ok, msg = self.is_in_preferred_time(now)
-        if not ok: return False, msg
-
-        # Interval Checks with Jitter
-        elapsed_mins = (now_ts - self.state["last_test_ts"]) / 60
-        jitter = random.randint(0, JITTER_MAX_MINS)
-        
-        if self.state["daily_count"] == LONG_GAP_AFTER_TEST:
-            required = (LONG_GAP_DURATION_HOURS * 60) + jitter
-            if elapsed_mins < required:
-                return False, f"Waiting for long gap ({int(required - elapsed_mins)}m left)"
-        elif self.state["last_test_ts"] > 0 and self.state["last_test_day"] == today_str:
-            required = MIN_GAP_BETWEEN_TESTS_MINS + jitter
-            if elapsed_mins < required:
-                return False, f"Waiting for interval ({int(required - elapsed_mins)}m left)"
-
-        return True, "Ready"
-
-    def record_success_at(self, now):
-        # Humanize: Add random sub-minute jitter to the timestamp
-        actual_ts = now.timestamp() + random.randint(0, 45)
-        dt = datetime.fromtimestamp(actual_ts)
-        today_str = dt.strftime("%Y-%m-%d")
-        
-        if not self.state["start_date"]:
-            self.state["start_date"] = today_str
-        
-        if self.state["last_test_day"] != today_str:
-            self.state["daily_count"] = 0
-
-        self.state["total_count"] += 1
-        self.state["daily_count"] += 1
-        self.state["last_test_ts"] = actual_ts
-        self.state["last_test_day"] = today_str
-        self.save_state()
-
-def find_recursive(obj, name=None, role=None):
-    try:
-        obj_name = obj.name
-        obj_role = obj.get_role_name()
-        if (name is None or name == obj_name) and (role is None or role == obj_role):
-            return obj
-        for i in range(obj.get_child_count()):
-            child = obj.get_child_at_index(i)
-            res = find_recursive(child, name, role)
-            if res: return res
-    except: pass
-    return None
-
-def find_all_by_role(obj, role_name, results):
-    try:
-        if obj.get_role_name() == role_name:
-            results.append(obj)
-        for i in range(obj.get_child_count()):
-            child = obj.get_child_at_index(i)
-            find_all_by_role(child, role_name, results)
-    except: pass
-
-def wait_for_element(root, name=None, role=None, timeout=30):
-    start = time.time()
-    while time.time() - start < timeout:
-        el = find_recursive(root, name, role)
-        if el: return el
-        time.sleep(1)
-    return None
-
-def automate_measurement(app):
-    import pyatspi
-    print("UI Automation: Navigating...")
-    
-    # 1. TOS
-    tos = find_recursive(app, "Akzeptieren", "button")
-    if tos:
-        tos.queryAction().doAction(0)
-        time.sleep(2)
-
-    # 2. Check if setup is needed (Anbieter/Tarif)
-    if find_recursive(app, "Nutzerangaben vervollständigen", "button"):
-        return False, "User details missing. Please configure Provider/Tariff via VNC."
-
-    # 3. Messkampagne tab
-    menu = wait_for_element(app, "Messkampagne", "menu item")
-    if menu:
-        menu.queryAction().doAction(0)
-        time.sleep(2)
-
-    # 4. Start Button
-    btn = wait_for_element(app, "Messung durchführen", "button")
-    if not btn:
-        if find_recursive(app, "Die Downloadmessung wird durchgeführt.", "static"):
-            return True, "Already running"
-        return False, "Campaign start button not found."
-
-    btn.queryAction().doAction(0)
-    time.sleep(3)
-
-    # 5. Technical Requirements Checkboxes
-    cbs = []
-    find_all_by_role(app, "check box", cbs)
-    for cb in cbs:
-        cb.queryAction().doAction(0)
-        time.sleep(0.1)
-
-    start_final = wait_for_element(app, "Messung starten", "button")
-    if start_final:
-        start_final.queryAction().doAction(0)
-        time.sleep(3)
-
-    # 6. Location Dialog
-    dlg = find_recursive(app, "Standortfreigabe", "dialog")
-    if dlg:
-        no_btn = find_recursive(dlg, "Nein", "button")
-        if no_btn: no_btn.queryAction().doAction(0)
-        time.sleep(2)
-
-    if wait_for_element(app, "Die Downloadmessung wird durchgeführt.", "static"):
-        return True, "Started"
-    
-    return False, "Failed to confirm measurement start"
+            if "Window" in msg:
+                s_h, s_m = map(int, cp.prefs["START"].split(':'))
+                if now.hour >= s_h:
+                    now = now.replace(hour=s_h, minute=s_m) + timedelta(days=1)
+                else:
+                    now = now.replace(hour=s_h, minute=s_m)
+            elif "Day" in msg:
+                now = now.replace(hour=0, minute=0) + timedelta(days=1)
+            elif "Wait" in msg:
+                now += timedelta(minutes=5)
+            elif "Expired" in msg:
+                logging.error("Campaign expired during simulation!")
+                break
+            else:
+                now += timedelta(minutes=10)
+    logging.info(f"--- End Simulation ({cp.state['total']}/{cp.RULES['TOTAL']}) ---")
 
 def main():
-    manager = CampaignManager()
+    cp = Campaign()
+    if "--test-solver" in sys.argv: return run_simulation(cp)
 
-    if "--test-solver" in sys.argv:
-        print("--- Solver Test Mode ---")
-        manager.state["active"] = True
-        sim_now = datetime.now().replace(second=0, microsecond=0)
-        tests_done = 0
-        limit = 100000
-        while tests_done < TOTAL_TESTS_REQUIRED and limit > 0:
-            limit -= 1
-            allowed, msg = manager.can_measure_at(sim_now)
-            if allowed:
-                manager.record_success_at(sim_now)
-                tests_done += 1
-                print(f"Test {tests_done:02d} scheduled at {datetime.fromtimestamp(manager.state['last_test_ts']).strftime('%Y-%m-%d %H:%M:%S')}")
-                sim_now = datetime.fromtimestamp(manager.state['last_test_ts']) + timedelta(minutes=1)
-            else:
-                # Optimized simulation jumping
-                if "Waiting for gap day" in msg or "Not a preferred weekday" in msg:
-                    sim_now = sim_now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
-                elif "Outside general window" in msg or "Outside preferred windows" in msg:
-                    s_h, s_m = map(int, TIME_START.split(':'))
-                    if sim_now.hour >= s_h:
-                        sim_now = sim_now.replace(hour=s_h, minute=s_m, second=random.randint(0, 59)) + timedelta(days=1)
-                    else:
-                        sim_now = sim_now.replace(hour=s_h, minute=s_m, second=random.randint(0, 59))
-                elif "Waiting for long gap" in msg:
-                    sim_now += timedelta(minutes=15)
-                elif "Waiting for interval" in msg:
-                    sim_now += timedelta(minutes=1)
-                else:
-                    sim_now += timedelta(minutes=10)
-        print(f"--- End Test ({TOTAL_TESTS_REQUIRED-tests_done} tests left) ---")
-        return
-
-    print("Breitbandmessung Master Automation Service Active.")
+    logging.info("Automation Service Active.")
+    ui = UI()
     
     while True:
         # Trigger Check
-        clip = get_clipboard().strip()
-        if clip in ["START", "RUN"] or os.path.exists("/START") or os.path.exists("/RUN"):
-            print("Trigger received!")
-            manager.state["active"] = True
-            manager.save_state()
+        if get_clip().strip() in ["START", "RUN"] or os.path.exists("/START"):
+            cp.state["active"] = True
+            cp.save()
             if os.path.exists("/START"): os.remove("/START")
-            if os.path.exists("/RUN"): os.remove("/RUN")
-            set_clipboard("CAMPAIGN ACTIVE")
+            set_clip("CAMPAIGN ACTIVE")
 
-        if manager.state["active"]:
+        if cp.state["active"]:
             now = datetime.now()
-            allowed, msg = manager.can_measure_at(now)
+            allowed, msg = cp.can_run(now)
             if allowed:
-                set_clipboard("STARTING TEST...")
+                set_clip("STARTING...")
                 try:
-                    import pyatspi
-                    reg = pyatspi.Registry
-                    app = None
-                    for i in range(reg.getDesktopCount()):
-                        d = reg.getDesktop(i)
-                        for j in range(d.get_child_count()):
-                            c = d.get_child_at_index(j)
-                            if c and "breitbandmessung" in c.name.lower():
-                                app = c; break
-                        if app: break
-                    
+                    app = ui.get_app()
                     if app:
-                        success, info = automate_measurement(app)
+                        success, info = ui.automate(app)
                         if success:
-                            manager.record_success_at(now)
-                            set_clipboard(f"TEST {manager.state['total_count']}/30 OK. Next in window.")
-                        else:
-                            set_clipboard(f"ERROR: {info}")
-                    else:
-                        set_clipboard("ERROR: App not running.")
+                            cp.record(now.timestamp() + random.randint(0, 45))
+                            set_clip(f"TEST {cp.state['total']}/30 OK")
+                        else: set_clip(f"ERROR: {info}")
+                    else: set_clip("ERROR: App not found")
                 except Exception as e:
-                    set_clipboard(f"FATAL: {e}")
+                    logging.exception("Failed")
+                    set_clip(f"FATAL: {e}")
             else:
-                set_clipboard(f"IDLE: {msg} ({manager.state['total_count']}/30)")
+                set_clip(f"IDLE: {msg} ({cp.state['total']}/30)")
         
         time.sleep(20)
 
