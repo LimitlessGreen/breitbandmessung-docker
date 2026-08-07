@@ -67,11 +67,28 @@ if [ "$ACTUAL_SHA" != "$INSTALL_SHA" ]; then
     exit 1
 fi
 
-# 4. Install .deb package
-log "Installing package..."
-# Needed because group 'messagebus' does not exist at this time
-sed -i '/messagebus/d' /var/lib/dpkg/statoverride || true
-dpkg -i "$DEB_TEMP"
+# 4. Install or Extract package based on architecture
+log "Installing package for architecture $(uname -m)..."
+if [ "$(uname -m)" = "x86_64" ]; then
+    # Standard installation for amd64
+    # Needed because group 'messagebus' does not exist at this time
+    sed -i '/messagebus/d' /var/lib/dpkg/statoverride || true
+    dpkg -i "$DEB_TEMP"
+else
+    # Extract only resources for ARM and others
+    log "ARM/Other architecture detected. Extracting app.asar from x64 package..."
+    EXTRACT_DIR="/tmp/bbm-extract"
+    mkdir -p "$EXTRACT_DIR"
+    dpkg-deb -x "$DEB_TEMP" "$EXTRACT_DIR"
+
+    # Move extracted app to /opt/Breitbandmessung (which is where Electron expects it or we point to it)
+    mkdir -p /opt/Breitbandmessung
+    cp -r "$EXTRACT_DIR/opt/Breitbandmessung/resources" /opt/Breitbandmessung/
+
+    # Clean up extraction dir
+    rm -rf "$EXTRACT_DIR"
+    log "Extraction successful."
+fi
 
 # 5. Save state for next container start
 echo "$INSTALL_VERSION" > "$VERSION_FILE"

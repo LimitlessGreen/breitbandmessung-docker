@@ -1,11 +1,18 @@
 ﻿# Pull base image.
 FROM jlesage/baseimage-gui:ubuntu-26.04-v4
 
+# Add TARGETARCH for multi-arch builds
+ARG TARGETARCH
 
 # Install packages
 RUN upg-pkg && \
     add-pkg apt-utils nano libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libxss1 libasound2t64 wget xterm libnss3 locales xdotool xclip ca-certificates libgl1 lsb-release \
     at-spi2-core python3-pyatspi xkb-data python3-rich && \
+    # Install Node.js and NPM for non-x86 architectures to run Electron natively
+    if [ "$TARGETARCH" != "amd64" ]; then \
+        add-pkg nodejs npm && \
+        npm install -g electron --unsafe-perm=true --allow-root; \
+    fi && \
     locale-gen de_DE.UTF-8
 
 # Generate and install favicons.

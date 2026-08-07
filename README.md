@@ -127,11 +127,13 @@ This creates a empty file called ```RUN``` in the root directory of the containe
 
 ## Support for ARM-Architecture (Raspberry Pi)
 
-```⚠️ The ARM-Architecture (➡️ also all Raspberry Pi's) is not supported! ⚠️```
+The container supports ARM architectures (like Raspberry Pi 4/5 with a 64-bit OS) natively. 
 
-Support for this architecture currently cannot be provided, as the precompiled binary of the "breitbandmessung.de" program is not available for this architecture.
+Although the official app is only provided as an x64 binary, this Docker container automatically detects your architecture and uses a native ARM Electron runtime to execute the application code. This ensures high performance and measurement accuracy without the need for slow CPU emulation.
 
-You can try your luck and contact the developers of the official app (https://breitbandmessung.de/impressum ➡️ info@breitbandmessung.de) and ask them to publish a linux .deb package compiled for the aarch64 architecture.
+**Requirements for ARM:**
+- A 64-bit Operating System (aarch64 / arm64).
+- Raspberry Pi 4 or 5 is recommended for optimal performance.
 
 
 ## Manually Building the Container (for development purposes)
