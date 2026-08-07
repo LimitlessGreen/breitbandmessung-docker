@@ -1,0 +1,6 @@
+.git
+.idea
+.artifacts
+breitbandmessung/
+screenshots/
+docker-compose*.yml

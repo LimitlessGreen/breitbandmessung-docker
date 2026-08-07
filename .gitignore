@@ -6,8 +6,6 @@
 
 # Docker / Local Dev
 .env
-docker-compose.local.yml
-.dockerignore
 
 # App Data / States (should not be in repo)
 breitbandmessung/

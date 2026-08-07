@@ -1,0 +1,21 @@
+services:
+  breitband-desktop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: breitbandmessung:local
+    container_name: breitband-desktop-local
+    environment:
+      TZ: Europe/Berlin
+      TIME_START: "08:00"
+      TIME_END: "22:00"
+      CHECK_FOR_UPDATES: "false"
+      # Debugging / Development flags
+      KEEP_APP_OPEN: "true"
+    volumes:
+      - ./data:/config/xdg/config/Breitbandmessung
+      # Mount rootfs for live-editing scripts if needed
+      # - ./rootfs:/rootfs
+    ports:
+      - 5800:5800
+    restart: "no"
