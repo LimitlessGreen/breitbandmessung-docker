@@ -11,7 +11,13 @@ RUN upg-pkg && \
     # Install Node.js and NPM for non-x86 architectures to run Electron natively
     if [ "$TARGETARCH" != "amd64" ]; then \
         add-pkg nodejs npm && \
-        npm install -g electron --unsafe-perm=true --allow-root; \
+        case "$TARGETARCH" in \
+            "arm64") export ELECTRON_ARCH="arm64" ;; \
+            "arm") export ELECTRON_ARCH="armv7l" ;; \
+        esac && \
+        npm install -g electron --unsafe-perm=true --allow-root && \
+        # Fix permissions so electron can download its binary if it failed during install
+        chmod -R 777 /usr/local/lib/node_modules/electron; \
     fi && \
     locale-gen de_DE.UTF-8
 
