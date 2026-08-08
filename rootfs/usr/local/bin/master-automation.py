@@ -13,7 +13,7 @@ try:
 except Exception:
     HAS_RICH = False
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def print_schedule_table(cp, title="Predicted Schedule"):
     if not HAS_RICH:
