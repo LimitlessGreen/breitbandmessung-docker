@@ -15,7 +15,7 @@ RUN upg-pkg && \
             "arm64") export ELECTRON_ARCH="arm64" ;; \
             "arm") export ELECTRON_ARCH="armv7l" ;; \
         esac && \
-        npm install -g electron --unsafe-perm=true --allow-root && \
+        npm install -g electron asar --unsafe-perm=true --allow-root && \
         # Fix permissions so electron can download its binary if it failed during install
         chmod -R 777 /usr/local/lib/node_modules/electron; \
     fi && \

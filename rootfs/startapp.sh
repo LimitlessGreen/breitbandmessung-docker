@@ -4,6 +4,17 @@ APP_PATH="/opt/Breitbandmessung/breitbandmessung"
 ASAR_PATH="/opt/Breitbandmessung/resources/app.asar"
 ELECTRON_FLAGS="--no-sandbox --disable-gpu --force-renderer-accessibility"
 
+# Create a spoofing script to bypass architecture checks (e.g. for ARM)
+SPOOF_JS="/tmp/electron-spoof.js"
+echo "if (typeof process !== 'undefined') {
+    try {
+        Object.defineProperty(process, 'arch', { value: 'x64', configurable: true });
+        Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    } catch (e) { console.error('Spoofing failed:', e); }
+}" > "$SPOOF_JS"
+
+export NODE_OPTIONS="--require $SPOOF_JS"
+
 if [ -f "$APP_PATH" ] && [ "$(uname -m)" = "x86_64" ]; then
     echo "[Launcher] Starting official x64 binary..."
     exec "$APP_PATH" $ELECTRON_FLAGS
