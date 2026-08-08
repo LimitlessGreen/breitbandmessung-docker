@@ -90,7 +90,24 @@ else
     log "Extraction successful."
 fi
 
-# 5. Save state for next container start
+# 5. Patch app.asar to bypass architecture checks on ARM
+ASAR_PATH="/opt/Breitbandmessung/resources/app.asar"
+if [ "$(uname -m)" != "x86_64" ] && [ -f "$ASAR_PATH" ]; then
+    log "ARM architecture detected. Patching app.asar..."
+    PATCH_DIR="/tmp/asar-patch"
+    mkdir -p "$PATCH_DIR"
+    asar extract "$ASAR_PATH" "$PATCH_DIR/extracted"
+
+    # Find the main JS file and replace OS/Arch checks
+    find "$PATCH_DIR/extracted" -name "main.*.js" -exec sed -i 's/process\.arch/"x64"/g' {} +
+    find "$PATCH_DIR/extracted" -name "main.*.js" -exec sed -i 's/process\.platform/"linux"/g' {} +
+
+    asar pack "$PATCH_DIR/extracted" "$ASAR_PATH"
+    rm -rf "$PATCH_DIR"
+    log "Patching complete."
+fi
+
+# 6. Save state for next container start
 echo "$INSTALL_VERSION" > "$VERSION_FILE"
 echo "$INSTALL_SHA" > "$HASH_FILE"
 log "Installation of Breitbandmessung $INSTALL_VERSION successful."
