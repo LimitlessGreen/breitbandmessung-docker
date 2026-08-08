@@ -40,7 +40,10 @@ class UI:
             d = reg.getDesktop(i)
             for j in range(d.get_child_count()):
                 c = d.get_child_at_index(j)
-                if c and "breitbandmessung" in c.name.lower(): return c
+                if not c: continue
+                logging.debug(f"Found AT-SPI object: {c.name} (Role: {c.get_role_name()})")
+                if "breitbandmessung" in c.name.lower() or "ias" in c.name.lower(): 
+                    return c
         return None
 
     def find_all(self, obj, role, results):
