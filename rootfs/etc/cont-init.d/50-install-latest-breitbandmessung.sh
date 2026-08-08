@@ -101,6 +101,8 @@ if [ "$(uname -m)" != "x86_64" ] && [ -f "$ASAR_PATH" ]; then
     # Find the main JS file and replace OS/Arch checks
     find "$PATCH_DIR/extracted" -name "main.*.js" -exec sed -i 's/process\.arch/"x64"/g' {} +
     find "$PATCH_DIR/extracted" -name "main.*.js" -exec sed -i 's/process\.platform/"linux"/g' {} +
+    find "$PATCH_DIR/extracted" -name "main.*.js" -exec sed -i 's/validOs:!1/validOs:!0/g' {} +
+    find "$PATCH_DIR/extracted" -name "main.*.js" -exec sed -i 's/validOs:t\.validOs/validOs:!0/g' {} +
 
     asar pack "$PATCH_DIR/extracted" "$ASAR_PATH"
     rm -rf "$PATCH_DIR"
